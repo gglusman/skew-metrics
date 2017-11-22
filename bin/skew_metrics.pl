@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 $|=1;
 use strict;
-my $version = "171120";
+my $version = "171122";
 
 ####
 #
@@ -59,7 +59,7 @@ my $seg = segmentByFeatures($seq, $feat, $len);
 print "# Number of segments on $main = ", scalar @{$seg->{$main}}, "\n";
 
 # Compute metrics and report
-my($gc, $ta, $angle, $cp, $dp, $rmsd) = compute_metrics($seg, 100*$globalGC);
+my($gc, $ta, $angle, $cs, $ds, $rs) = compute_metrics($seg, 100*$globalGC);
 
 print join("\t", qw/#type gc ta angle/), "\n";
 foreach my $type (qw/lead lag/) {
@@ -71,9 +71,9 @@ foreach my $type (qw/lead lag/) {
 		), "\n";
 }
 
-print "cross_product\t", sprintf("%.4f", $cp), "\n";
-print "dot_product\t", sprintf("%.4f", $dp), "\n";
-print "RMSD\t", sprintf("%.4f", $rmsd), "\n";
+print "cross-skew\t", sprintf("%.4f", $cs), "\n";
+print "dot-skew\t", sprintf("%.4f", $ds), "\n";
+print "residual skew\t", sprintf("%.4f", $rs), "\n";
 
 
 
@@ -312,4 +312,3 @@ sub basecomp {
 
 	return ($A, $C, $G, $T, length($_));
 }
-
