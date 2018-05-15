@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 $|=1;
 use strict;
-my $version = "171122";
+my $version = "180514";
 
 ####
 #
@@ -20,6 +20,8 @@ my $version = "171122";
 # The second parameter is the file holding the genome annotation in GFF format. The sequence/contig identifiers in the GFF need to match those used in the FASTA file.
 # The third (optional) parameter is the minimal length of a sequence/contig to be included. Defaults to 100 kb. Set it to 1 if you want to include all sequences.
 # The fourth (optional) parameter is the fraction of sequence length to consider "too close to the end"; Ori and Ter sites closer to either end of the sequence than this cutoff are corrected to the closest sequence end. Defaults to 1%. Set it to a smaller number (e.g., 0.000000001) if you want no correction.
+# The fifth (optional) parameter is the location of the origin of replication. Will be computed using the GC disparity method if unspecified. If specified, and no sixth parameter is given, the terminator (of replication) will be estimated based on the specified origin of replication.
+# The sixth (optional) parameter is the location of the terminator (of replication). Will be computed using the GC disparity method if unspecified.
 #
 # The output gives information about the analysis run (these lines start with the # symbol), and finally gives three lines stating the computed value for the cross_product, the dot_product and the RMSD.
 #
@@ -28,10 +30,11 @@ my $version = "171122";
 # Examples of usage:
 #   skew_metrics.pl genome.fna genome.gff
 #   skew_metrics.pl genome.fna genome.gff 1   (include all sequences in the FASTA file)
+#   skew_metrics.pl genome.fna genome.gff 0 0 123456 654321  (Ori = 123456, Ter = 654321)
 #
 ####
 
-my($fna, $gff, $minlen, $fixends) = @ARGV;
+my($fna, $gff, $minlen, $fixends, $oriCoordinate, $terCoordinate) = @ARGV;
 $minlen ||= 100000;  #ignore sequences shorter than this
 $fixends ||= 0.01; #set to fraction of sequence to fix, e.g. 0.01
 my $minLenToFix = 1e5; #minimal length of sequence to consider fixing Ori and Ter
@@ -59,7 +62,7 @@ my $seg = segmentByFeatures($seq, $feat, $len);
 print "# Number of segments on $main = ", scalar @{$seg->{$main}}, "\n";
 
 # Compute metrics and report
-my($gc, $ta, $angle, $cs, $ds, $rs) = compute_metrics($seg, 100*$globalGC);
+my($gc, $ta, $angle, $cp, $dp, $rmsd) = compute_metrics($seg, 100*$globalGC);
 
 print join("\t", qw/#type gc ta angle/), "\n";
 foreach my $type (qw/lead lag/) {
@@ -71,9 +74,9 @@ foreach my $type (qw/lead lag/) {
 		), "\n";
 }
 
-print "cross-skew\t", sprintf("%.4f", $cs), "\n";
-print "dot-skew\t", sprintf("%.4f", $ds), "\n";
-print "residual skew\t", sprintf("%.4f", $rs), "\n";
+print "cross_product\t", sprintf("%.4f", $cp), "\n";
+print "dot_product\t", sprintf("%.4f", $dp), "\n";
+print "RMSD\t", sprintf("%.4f", $rmsd), "\n";
 
 
 
@@ -96,14 +99,14 @@ sub getLqsParams {
 	} else {
 		## Values hard-coded here to avoid having to locate a file.
 		print "# Using hard-coded skew fit parameters\n";
-		$lqs{'leadGC'}[0] = [0.27622, -0.00393];
-		$lqs{'leadGC'}[1] = [0.26344, -0.00379];
-		$lqs{'leadTA'}[0] = [-0.23960, 0.00476];
-		$lqs{'leadTA'}[1] = [0.01815, -0.00035];
-		$lqs{'lagGC'}[0] = [-0.23410, 0.00501];
-		$lqs{'lagGC'}[1] = [-0.04872, 0.00128];
-		$lqs{'lagTA'}[0] = [0.19010, -0.00300];
-		$lqs{'lagTA'}[1] = [0.07187, -0.00075];
+		$lqs{'leadGC'}[0] = [0.279804, -0.004015];
+		$lqs{'leadGC'}[1] = [0.267681, -0.003821];
+		$lqs{'leadTA'}[0] = [-0.256366, 0.005399];
+		$lqs{'leadTA'}[1] = [0.0422047, -0.0005193];
+		$lqs{'lagGC'}[0] = [-0.224735, 0.004712];
+		$lqs{'lagGC'}[1] = [-0.062479, 0.001461];
+		$lqs{'lagTA'}[0] = [0.175892, -0.003159];
+		$lqs{'lagTA'}[1] = [-0.0222043, 0.0005183];
 	}
 	
 	return \%lqs;
@@ -116,6 +119,21 @@ sub compute_metrics {
 	foreach my $cacc (keys %$seg) {
 		my $ori = $ori->{$cacc};
 		my $ter = $ter->{$cacc};
+		if ($oriCoordinate) {
+			$ori = $oriCoordinate;
+			if ($terCoordinate) {
+				$ter = $terCoordinate;
+			} else {
+				### compute it
+				my $length = $len->{$cacc};
+				$ter = $ori+$length/2;
+				$ter -= $length if $ter>$length;
+			}
+		}
+		if ($terCoordinate) {
+			$ter = $terCoordinate;
+		}
+		
 		foreach my $f (@{$seg->{$cacc}}) {
 			my($feature, $start, $end, $strand, $size, $gc, $ta) = @$f;
 			next if length($strand)>1;
@@ -123,8 +141,8 @@ sub compute_metrics {
 			my $type = 'lead';
 			my $onBottomStrand = ($strand eq '-');
 			my $invert =
-				($ter>$ori && ($where<$ori || $where>$ter)) ||
-				($ter<$ori && ($where<$ori && $where>$ter));
+			($ter>$ori && ($where<$ori || $where>$ter)) ||
+			($ter<$ori && ($where<$ori && $where>$ter));
 			if ($invert xor $onBottomStrand) {
 				$type = 'lag' if $type eq 'lead';
 			}
